@@ -1,4 +1,4 @@
-from rest_framework import mixins, generics
+from rest_framework import mixins, generics, status
 from rest_framework.response import Response
 import requests
 import tablib
@@ -35,9 +35,12 @@ class ImportSalesForceData(generics.GenericAPIView):
 
     def get(self, request):
         
-        authorization = request.META.get('HTTP_AUTHORIZATION')
-        _, token = authorization.split(' ')
-        headers = {'Authorization': f"Bearer {token}"}
+        try:
+            authorization = request.META.get('HTTP_AUTHORIZATION')
+            _, token = authorization.split(' ')
+            headers = {'Authorization': f"Bearer {token}"}
+        except AttributeError:
+            return Response({"status": "Include a Bearer Token from token api"}, status=status.HTTP_401_UNAUTHORIZED)
 
         #Import Account
         response = requests.get('https://clientell3-dev-ed.my.salesforce.com/services/data/v55.0/query/?q=SELECT Id, Name From Account', headers=headers).json()
@@ -50,20 +53,20 @@ class ImportSalesForceData(generics.GenericAPIView):
         if not result.has_errors():
             result = account_resource.import_data(dataset, dry_run=False)
         else:
-            return Response({"status": "import failed"})
+            return Response({"status": "import failed"}, status=status.HTTP_502_BAD_GATEWAY)
 
         #Import User
         response = requests.get('https://clientell3-dev-ed.my.salesforce.com/services/data/v55.0/query/?q=SELECT Id, Name From User', headers=headers).json()
         data = [(i['Id'], i['Name']) for i in response['records']]
         user_resource = resources.modelresource_factory(model=User)()
         dataset = tablib.Dataset(headers=['id', 'name'])
-        for i in data:
-            dataset.append(i)
+        # for i in data:
+        #     dataset.append(i)
         result = user_resource.import_data(dataset, dry_run=True)
         if not result.has_errors():
             result = user_resource.import_data(dataset, dry_run=False)
         else:
-            return Response({"status": "import failed"})
+            return Response({"status": "import failed"}, status=status.HTTP_400_BAD_REQUEST)
 
         # #Import Opportunities 
         response = requests.get('https://clientell3-dev-ed.my.salesforce.com/services/data/v55.0/query/?q=SELECT Id, Name, Amount, AccountId, OwnerId From Opportunity', headers=headers).json()
@@ -76,7 +79,7 @@ class ImportSalesForceData(generics.GenericAPIView):
         if not result.has_errors():
             result = opportunity_resource.import_data(dataset, dry_run=False)
         else:
-            return Response({"status": "import failed"})
+            return Response({"status": "import failed"}, status==status.HTTP_502_BAD_GATEWAY)
         return Response({"status": "imported"})
 
 
