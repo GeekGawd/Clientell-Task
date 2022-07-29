@@ -1,5 +1,6 @@
 from rest_framework import mixins, generics, status
 from rest_framework.response import Response
+from rest_framework.views import APIView
 import requests
 import tablib
 from import_export import resources
@@ -7,17 +8,18 @@ from django.db.models import Count, Exists, OuterRef
 from .models import Account, Opportunity, User
 from .serializers import AccountSerializer, OpportunitySerializer, UserSerializer
 from .paginations import CustomPagination
+from .tasks import import_user, import_account, import_opportunities, add
 
 
 # Create your views here.
 
 class HelloWorldAPI(generics.GenericAPIView):
-
+    """The API in root path to check if API is working or not."""
     def get(self, request):
         return Response({"status": "Hello World!"})
 
 class AccessTokenView(generics.GenericAPIView):
-
+    """Obtain the Salesforce Token to use the Import API"""
     def get(self, request):
         payload = {
             'grant_type':'password',
@@ -32,7 +34,14 @@ class AccessTokenView(generics.GenericAPIView):
 
 
 class ImportSalesForceData(generics.GenericAPIView):
+    """
+    The Import API imports Account, User and Opportunities in the order respectively.
 
+    1) The Logic could have been segrated and made into three different APIs, but the task required one API.
+
+    2)The API takes a lot of time to import, so backgroud processing(with Celery) can also be added to reduce
+    API call timing, however due to the time constraint and the task scope I didn't add Celery.
+    """
     def get(self, request):
         
         try:
@@ -42,49 +51,22 @@ class ImportSalesForceData(generics.GenericAPIView):
         except AttributeError:
             return Response({"status": "Include a Bearer Token from token api"}, status=status.HTTP_401_UNAUTHORIZED)
 
+        
         #Import Account
-        response = requests.get('https://clientell3-dev-ed.my.salesforce.com/services/data/v55.0/query/?q=SELECT Id, Name From Account', headers=headers).json()
-        data = [(i['Id'], i['Name']) for i in response['records']]
-        account_resource = resources.modelresource_factory(model=Account)()
-        dataset = tablib.Dataset(headers=['id', 'name'])
-        for i in data:
-            dataset.append(i)
-        result = account_resource.import_data(dataset, dry_run=True)
-        if not result.has_errors():
-            result = account_resource.import_data(dataset, dry_run=False)
-        else:
-            return Response({"status": "import failed"}, status=status.HTTP_502_BAD_GATEWAY)
+        import_account.delay(headers)
 
-        #Import User
-        response = requests.get('https://clientell3-dev-ed.my.salesforce.com/services/data/v55.0/query/?q=SELECT Id, Name From User', headers=headers).json()
-        data = [(i['Id'], i['Name']) for i in response['records']]
-        user_resource = resources.modelresource_factory(model=User)()
-        dataset = tablib.Dataset(headers=['id', 'name'])
-        # for i in data:
-        #     dataset.append(i)
-        result = user_resource.import_data(dataset, dry_run=True)
-        if not result.has_errors():
-            result = user_resource.import_data(dataset, dry_run=False)
-        else:
-            return Response({"status": "import failed"}, status=status.HTTP_400_BAD_REQUEST)
+        # Import User
+        import_user.delay(headers)
 
         # #Import Opportunities 
-        response = requests.get('https://clientell3-dev-ed.my.salesforce.com/services/data/v55.0/query/?q=SELECT Id, Name, Amount, AccountId, OwnerId From Opportunity', headers=headers).json()
-        data = [(i['Id'], i['Name'], i['Amount'], i['AccountId'], i['OwnerId']) for i in response['records']]
-        opportunity_resource = resources.modelresource_factory(model=Opportunity)()
-        dataset = tablib.Dataset(headers=['id', 'name', 'amount', 'account', 'user'])
-        for i in data:
-            dataset.append(i)
-        result = opportunity_resource.import_data(dataset, dry_run=True)
-        if not result.has_errors():
-            result = opportunity_resource.import_data(dataset, dry_run=False)
-        else:
-            return Response({"status": "import failed"}, status==status.HTTP_502_BAD_GATEWAY)
+        import_opportunities.delay(headers)
+
         return Response({"status": "imported"})
 
 
 class OpportunityGetAPI(generics.GenericAPIView, 
                         mixins.ListModelMixin):
+    """A GET API to view all Opportunties"""
     queryset = Opportunity.objects.all()
     serializer_class = OpportunitySerializer
     pagination_class = CustomPagination
@@ -94,6 +76,9 @@ class OpportunityGetAPI(generics.GenericAPIView,
 
 class AccountGetAPI(generics.GenericAPIView, 
                         mixins.ListModelMixin):
+    """A GET API to view all Accounts + also add 
+    an extra field that is the sum of all opportunities
+    under that account"""
     queryset = Account.objects.all().annotate(number_of_opportunities=Count('opportunities'))
     serializer_class = AccountSerializer
     pagination_class = CustomPagination
@@ -103,6 +88,9 @@ class AccountGetAPI(generics.GenericAPIView,
 
 class UserGetAPI(generics.GenericAPIView, 
                         mixins.ListModelMixin):
+    """An API to view all Users + 
+    also add a boolean field that says 
+    whether the user has any opportunity who's amount > 100,000"""
     serializer_class = UserSerializer
     pagination_class = CustomPagination
 
@@ -115,3 +103,12 @@ class UserGetAPI(generics.GenericAPIView,
 
     def get(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
+
+# class AddNumberAPI(APIView):
+
+#     def post(self, request):
+#         data = request.data
+#         a = data.get('first_number')
+#         b = data.get('second_number')
+#         add.delay(a, b)
+#         return Response({"status": "number added"})

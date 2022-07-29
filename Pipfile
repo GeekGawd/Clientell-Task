@@ -15,6 +15,12 @@ tablib = "*"
 django-import-export = "*"
 django-debug-toolbar = "*"
 whitenoise = "*"
+celery = "*"
+redis = "*"
+django-celery-results = "*"
+flower = "*"
+eventlet = "*"
+django-celery-beat = "*"
 
 [dev-packages]
 

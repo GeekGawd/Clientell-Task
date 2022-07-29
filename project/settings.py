@@ -41,7 +41,9 @@ INSTALLED_APPS = [
     "debug_toolbar",
     'import_export',
     'rest_framework',
-    'import_data'
+    'import_data',
+    'django_celery_results',
+    'django_celery_beat'
 ]
 
 MIDDLEWARE = [
@@ -78,18 +80,28 @@ WSGI_APPLICATION = 'project.wsgi.application'
 
 
 # Database
-# https://docs.djangoproject.com/en/4.0/ref/settings/#databases
+# https://docs.djangoproject.com/en/4.0/ref/settings/#databases]
 
+"""Using SQLite as it will do the job and cuts the time reaching online servers.
+Just for testing purposes and this task."""
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config("AZURE_DBNAME"),
-        'USER': config("POSTGRES_USER"),
-        'PASSWORD': config("AZURE_PASSWORD"),
-        'HOST': config('AZURE_HOST'),
-        'PORT': config("POSTGRES_PORT"),
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': 'mydatabase',
     }
 }
+
+
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': config("AZURE_DBNAME"),
+#         'USER': config("POSTGRES_USER"),
+#         'PASSWORD': config("AZURE_PASSWORD"),
+#         'HOST': config('AZURE_HOST'),
+#         'PORT': config("POSTGRES_PORT"),
+#     }
+# }
 
 
 # Password validation
@@ -158,3 +170,20 @@ DEBUG_TOOLBAR_PANELS = [
 ]
 
 CSRF_TRUSTED_ORIGINS = ['https://*.127.0.0.1', "https://*.azurewebsites.net/"]
+
+CELERY_BROKER_URL = config('CELERY_BROKER_URL')
+CELERY_ACCEPT_CONTENT = ['application/json']
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_TIMEZONE = config('CELERY_TIMEZONE')
+CELERY_RESULT_BACKEND =  config('CELERY_RESULT_BACKEND')
+
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [('localhost', 6379)],
+        },
+    },
+}

@@ -1,0 +1,30 @@
+version: '3'
+
+services:
+  project:
+    restart: always
+    build: ./
+    ports:
+      - "8000:8000"
+    links:
+      - redis:redis
+    env_file: .env
+    environment:
+      DEBUG: 'true'
+    command: >
+      sh -c "python3 manage.py migrate &&
+             python3 manage.py runserver 0.0.0.0:8000"
+
+  redis:
+    restart: always
+    env_file: .env
+    image: redis:latest
+    ports:
+      - "6379:6379"
+
+  celery:
+    restart: always
+    env_file: .env
+    build:
+      context: .
+    command: celery -A project.celery worker -l info --without-gossip --without-mingle --without-heartbeat -Ofair --pool=solo
